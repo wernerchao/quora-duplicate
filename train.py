@@ -8,3 +8,5 @@ pal = sns.color_palette()
 
 train = pd.read_csv('./data/train.csv')
 test = pd.read_csv('./data/test.csv')
+
+print('done')
