@@ -39,8 +39,6 @@ import random
 import numpy as np
 import pandas as pd
 import pickle
-from sklearn.feature_extraction.text import TfidfVectorizer
-from nltk.tokenize import word_tokenize
 import tensorflow as tf
 
 print(">>> Load data")
@@ -57,7 +55,6 @@ questions = list(set(train["question1"] + train["question2"] + test["question1"]
 questions = [q for q in questions if str(q) != 'nan']
 tfidf = pickle.load(open("model/tfidf_1024_model.pkl", "rb"))
 tfidf = tfidf.fit(questions)
-num_vocabs = tfidf.max_features
 
 print(">>> Transform test data")
 df_test = pd.DataFrame({
@@ -66,39 +63,38 @@ df_test = pd.DataFrame({
     "q2": list(tfidf.transform(test["question2"]))
 })
 
-# del vocab
-del questions
-del tfidf
 del train
 del test
+del questions
+del tfidf
 gc.collect()
 
 print("Restore saved model")
-MAX_FEATURES = num_vocabs
-NUM_HID_UNITS_1 = 1024
-NUM_HID_UNITS_2 = 512
+NUM_INPUT_UNITS = df_test.q1[0].shape[1] * 2
+NUM_HID1_UNITS = 1024
+NUM_HID2_UNITS = 512
 NUM_OUTPUT = 2
 
-x = tf.placeholder(tf.float32, [None, MAX_FEATURES * 2])
+BATCH_SIZE = 1000
+
+x = tf.placeholder(tf.float32, [None, NUM_INPUT_UNITS])
 y = tf.placeholder(tf.float32, [None, NUM_OUTPUT])
 keep_prob = tf.placeholder(tf.float32)
 
-hid1_W = tf.Variable(tf.random_normal([MAX_FEATURES * 2, NUM_HID_UNITS_1]))
-hid1_b = tf.Variable(tf.random_normal([NUM_HID_UNITS_1]))
+hid1_W = tf.Variable(tf.random_normal([NUM_INPUT_UNITS, NUM_HID1_UNITS]))
+hid1_b = tf.Variable(tf.random_normal([NUM_HID1_UNITS]))
 hid1 = tf.nn.sigmoid(tf.matmul(x, hid1_W) + hid1_b)
 hid1_drop = tf.nn.dropout(hid1, keep_prob)
 
-hid2_W = tf.Variable(tf.random_normal([NUM_HID_UNITS_1, NUM_HID_UNITS_2]))
-hid2_b = tf.Variable(tf.random_normal([NUM_HID_UNITS_2]))
+hid2_W = tf.Variable(tf.random_normal([NUM_HID1_UNITS, NUM_HID2_UNITS]))
+hid2_b = tf.Variable(tf.random_normal([NUM_HID2_UNITS]))
 hid2 = tf.nn.sigmoid(tf.matmul(hid1_drop, hid2_W) + hid2_b)
 hid2_drop = tf.nn.dropout(hid2, keep_prob)
 
-out_W = tf.Variable(tf.random_normal([NUM_HID_UNITS_2, NUM_OUTPUT]))
+out_W = tf.Variable(tf.random_normal([NUM_HID2_UNITS, NUM_OUTPUT]))
 out_b = tf.Variable(tf.random_normal([NUM_OUTPUT]))
 output = tf.matmul(hid2_drop, out_W) + out_b
 
-xentropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=y))
-train_step = tf.train.AdamOptimizer(1e-2).minimize(xentropy)
 sess = tf.InteractiveSession()
 saver = tf.train.Saver()
 saver.restore(sess, "model/nn_simple.ckpt")
@@ -133,6 +129,6 @@ print("Num not duplicates", sum(df_predictions.is_duplicate <= 0.5))
 print("Average", df_predictions.is_duplicate.mean())
 
 
-df_predictions.to_csv("submission/nn_simple.csv", index=False)
+df_predictions.to_csv("submission/nn_simple_mod.csv", index=False)
 print("Done")
 

@@ -39,77 +39,52 @@ import random
 import numpy as np
 import pandas as pd
 import pickle
-from sklearn.feature_extraction.text import TfidfVectorizer
-from nltk.tokenize import word_tokenize
 import tensorflow as tf
 
 print(">>> Load data")
-train = pd.read_csv("data/train.csv")
-test = pd.read_csv("data/test.csv")
+df_train = pd.read_hdf("dataframe/df_train.hdf", "df_train")
 
-train["question1"] = train["question1"].fillna("")
-train["question2"] = train["question2"].fillna("")
-test["question1"] = test["question1"].fillna("")
-test["question2"] = test["question2"].fillna("")
-
-print(">>> Fit TF-IDF model")
-questions = list(set(train["question1"] + train["question2"] + test["question1"] + test["question2"]))
-questions = [q for q in questions if str(q) != 'nan']
-tfidf = pickle.load(open("model/tfidf_1024_model.pkl", "rb"))
-tfidf = tfidf.fit(questions)
-num_vocabs = tfidf.max_features
-
-print(">>> Transform train data")
-df_train = pd.DataFrame({
-    "q1": list(tfidf.transform(train["question1"])),
-    "q2": list(tfidf.transform(train["question2"])),
-    "dup": train["is_duplicate"]
-})
-
-# del vocab
-del questions
-del tfidf
-del train
-del test
-gc.collect()
-
-
+print(">>> Start session")
 sess = tf.InteractiveSession()
 
-MAX_FEATURES = num_vocabs
-NUM_HID_UNITS_1 = 1024
-NUM_HID_UNITS_2 = 512
+NUM_INPUT_UNITS = df_train.q1[0].shape[1] * 2
+NUM_HID1_UNITS = 1024
+NUM_HID2_UNITS = 512
 NUM_OUTPUT = 2
 
 BATCH_SIZE = 1000
 
-x = tf.placeholder(tf.float32, [None, MAX_FEATURES * 2])
+print(">>> Make nn")
+x = tf.placeholder(tf.float32, [None, NUM_INPUT_UNITS])
 y = tf.placeholder(tf.float32, [None, NUM_OUTPUT])
 keep_prob = tf.placeholder(tf.float32)
 
-hid1_W = tf.Variable(tf.random_normal([MAX_FEATURES * 2, NUM_HID_UNITS_1]))
-hid1_b = tf.Variable(tf.random_normal([NUM_HID_UNITS_1]))
+hid1_W = tf.Variable(tf.random_normal([NUM_INPUT_UNITS, NUM_HID1_UNITS]))
+hid1_b = tf.Variable(tf.random_normal([NUM_HID1_UNITS]))
 hid1 = tf.nn.sigmoid(tf.matmul(x, hid1_W) + hid1_b)
 hid1_drop = tf.nn.dropout(hid1, keep_prob)
 
-hid2_W = tf.Variable(tf.random_normal([NUM_HID_UNITS_1, NUM_HID_UNITS_2]))
-hid2_b = tf.Variable(tf.random_normal([NUM_HID_UNITS_2]))
+hid2_W = tf.Variable(tf.random_normal([NUM_HID1_UNITS, NUM_HID2_UNITS]))
+hid2_b = tf.Variable(tf.random_normal([NUM_HID2_UNITS]))
 hid2 = tf.nn.sigmoid(tf.matmul(hid1_drop, hid2_W) + hid2_b)
 hid2_drop = tf.nn.dropout(hid2, keep_prob)
 
-out_W = tf.Variable(tf.random_normal([NUM_HID_UNITS_2, NUM_OUTPUT]))
+out_W = tf.Variable(tf.random_normal([NUM_HID2_UNITS, NUM_OUTPUT]))
 out_b = tf.Variable(tf.random_normal([NUM_OUTPUT]))
 output = tf.matmul(hid2_drop, out_W) + out_b
 
 xentropy = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=output, labels=y))
-train_step = tf.train.AdamOptimizer(1e-2).minimize(xentropy)
+train_step = tf.train.AdamOptimizer(1e-3).minimize(xentropy)
 
+saver = tf.train.Saver()
 
 tf.global_variables_initializer().run()
 num_data = df_train.shape[0]
 steps = int(np.ceil(num_data / BATCH_SIZE))
-EPOCH = 1
-for _ in range(EPOCH):
+EPOCH = 30
+print(">>> Start training")
+for epoch in range(EPOCH):
+    print(">>> EPOCH", epoch)
     for step in range(steps):
         start = step * BATCH_SIZE
         end = start + BATCH_SIZE
@@ -121,15 +96,15 @@ for _ in range(EPOCH):
         if step % 100 == 0:
             print("Step", step, " Start", start, " End", (end - 1), " Cost", cost)
 
+    print("--- Saved ---")
+    saver.save(sess, "model/nn_simple.ckpt")
 
-print("Cost =", cost)
+
+print(">>> Cost =", cost)
 
 del _x
 del _y
 gc.collect()
-
-saver = tf.train.Saver()
-saver.save(sess, "model/nn_simple.ckpt")
 
 
 correct_prediction = tf.equal(tf.argmax(output, 1), tf.argmax(y, 1))
