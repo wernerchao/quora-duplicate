@@ -9,8 +9,9 @@ df = sqlContext.read.load('./train.csv',
                           inferSchema='true')
 
 df = df.cache()
-
-tokenizer = Tokenizer(inputCols=['question1', 'question2'], outputCol='words')
+df = df.withColumnRenamed('is_duplicate', 'label')
+# indexers = [Tokenizer(inputCol=column, outputCol="words").transform(df) for column in ['question1', 'question2']]
+tokenizer = Tokenizer(inputCol='question1', outputCol='words')
 remover = StopWordsRemover(inputCol="words", outputCol="filtered")
 hashingTF = HashingTF(inputCol="filtered", outputCol="rawFeatures", numFeatures=1000)
 idf = IDF(inputCol="rawFeatures", outputCol="features")
